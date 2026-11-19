@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avaliação DevOps 18/11</title>
+</head>
+<body>
+    <h1>Avaliação DevOps 18/11</h1>
+    <form id="cadastro">
+        <h2 class="formTitle">Cadastro de Produto</h2>
+
+        <label for="nome">Nome</label>
+        <input type="text" id="nome" name="nome" required>
+        <br>
+        <label for="cat">Categoria</label>
+        <input type="text" id="cat" name="cat" required>
+        <br>
+        <label for="preco">Preço</label>
+        <input type="number" id="preco" name="preco" required>
+        <br>
+        <label for="quantidade">Quantidade</label>
+        <input type="number" id="quantidade" name="quantidade" required>
+        <br>
+        <button type="submit" id="submitBtn">Cadastrar</button>
+    </form>
+
+    <table id="tabelaProdutos">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>Categoria</th>
+                <th>Preço</th>
+                <th>Quantidade</th>
+            </tr>
+        </thead>
+        <tbody id="corpoTabelaProdutos">
+            
+        </tbody>
+    </table>
+
+    <button id="mostrarBtn">Listar todos os produtos</button>
+
+    <script>
+        "use strict";
+
+        const url = "http://192.168.122.95"
+        let submit = document.getElementById("submitBtn")
+
+        submit.addEventListener('submit', (e)=>{
+            e.preventDefault();
+            submit.setAttribute('disabled', 'disabled');
+
+            const nome = document.getElementById('nome').value;
+            const cat = document.getElementById('cat').value;
+            const preco = document.getElementById('preco').value;
+            const quantidade = document.getElementById('quantidade').value;
+
+            fetch(url+"/produto", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    nome: nome,
+                    cat: cat,
+                    preco: preco,
+                    quantidade: quantidade
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message);
+                document.getElementById('submitBtn').removeAttribute('disabled');
+            })
+            .catch(error => {
+                console.error(error);
+                alert("Houve um erro ao tentar cadastrar o produto.")
+            })
+        })
+
+        let mostrar = document.getElementById("mostrarBtn")
+        mostrar.onclick = mostrar_produtos
+
+        function mostrar_produtos()
+        {
+            async function carregarProdutos() {
+                await fetch(url+'/produtos', {
+                  headers: {
+                    'Content-Type': 'application/json',
+                  }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                      const corpo = document.getElementById('corpoTabelaProdutos');
+                      corpo.innerHTML = '';
+                
+                      data.values.forEach(produto => {
+                        const linha = document.createElement('tr');
+                
+                        const idColuna = document.createElement('td');
+                        idColuna.textContent = produto.idProduto;
+                
+                        const nomeColuna = document.createElement('td');
+                        nomeColuna.textContent = produto.nome;
+                
+                        const categoriaColuna = document.createElement('td');
+                        categoriaColuna.textContent = produto.categoria;
+                
+                        const preco = document.createElement('td');
+                        preco.textContent = `R$ ${produto.preco}`;
+                
+                        const quantidade = document.createElement('td');
+                        quantidade.textContent = `R$ ${produto.quantidade}`;
+
+                        linha.appendChild(idColuna);
+                        linha.appendChild(nomeColuna);
+                        linha.appendChild(categoriaColuna);
+                        linha.appendChild(precoColuna);
+                        linha.appendChild(quantidadeColuna);
+                
+                        corpo.appendChild(linha);
+                      });
+                
+                    } else {
+                      document.getElementById('mensagemErro').textContent = 'Erro ao carregar produtos: ' + data.message;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('mensagemErro').textContent = 'Erro de rede: ' + error.message;
+                });
+            }
+        }
+    </script>
+</body>
+</html>

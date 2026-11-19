@@ -1,0 +1,141 @@
+- name: Configurar VMs
+  hosts: servidores
+  become: true
+
+  vars:
+    pacotes:
+      - curl
+      - nginx
+      - git
+      - docker.io
+      - docker-compose-v2
+
+
+  tasks:
+    - name: Atualizar lista de pacotes
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+
+    - name: Instalar pacotes
+      ansible.builtin.apt:
+        name: "{{ pacotes }}"
+        state: present
+
+
+    - name: Garantir o Docker ativo
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+   
+    - name: Adicionar usuário aluno ao grupo do Docker
+      ansible.builtin.user:
+        name: aluno
+        groups: docker
+        append: true
+
+
+    - name: Criar o usuário do pipeline
+      ansible.builtin.user:
+        name: pipeline
+        shell: /bin/bash
+        create_home: true
+        state: present
+     
+    - name: Criar diretório do projeto
+      ansible.builtin.file:
+        path: /opt/avaliacao
+        state: directory
+        owner: aluno
+        group: aluno
+        mode: '0755'
+   
+    - name: Copiar arquivos da aplicacao
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../{{ item }}"
+        dest: "/opt/avaliacao/{{ item }}"
+        owner: aluno
+        group: aluno
+        mode: "0644"
+      loop:
+        - app/
+      when: inventory_hostname == "VM1"
+
+    - name: Copiar arquivos da aplicacao
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../{{ item }}"
+        dest: "/opt/avaliacao/{{ item }}"
+        owner: aluno
+        group: aluno
+        mode: "0644"
+      loop:
+        - api/
+      when: inventory_hostname == "VM2"
+
+- name: VM2
+  hosts: VM2
+  tasks:
+    - name: Validar sintaxe do compose.yaml
+      ansible.builtin.command:
+        cmd: docker compose -f /opt/avaliacao/api/docker-compose.yml config -q
+      changed_when: false
+
+    - name: Subir serviços com Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose -f /opt/avaliacao/api/docker-compose.yml up -d
+
+- name: VM1
+  hosts: VM1
+  vars:
+    app_name: "web"
+    app_tag: "latest"
+    container_name: "web"
+    port_host: 80
+    port_container: 80
+  tasks:
+    - name: Checar código de saída e ID do contêiner atual (se existir)
+      ansible.builtin.command:
+        cmd: "docker inspect --format='{{ '{{' }}.State.ExitCode{{ '}}' }} {{ '{{' }}.Image{{ '}}' }}' {{ container_name }}"
+      register: current_container
+      failed_when: false
+      changed_when: false
+
+    - name: Buildar a imagem Docker
+      ansible.builtin.command:
+        cmd: "docker build -t {{ app_name }}:{{ app_tag }} ."
+        chdir: "/opt/avaliacao/app"
+      changed_when: false
+
+    - name: Obter ID da imagem gerada no build
+      ansible.builtin.command:
+        cmd: "docker inspect --format='{{ '{{' }}.Id{{ '}}' }}' {{ app_name }}:{{ app_tag }}"
+      register: built_image
+      changed_when: false
+
+    - name: Avaliar se o contêiner precisa ser recriado/executado
+      ansible.builtin.set_fact:
+        needs_restart: >-
+          {{
+            current_container.rc != 0 or
+            current_container.stdout.split()[0] != '0' or
+            (current_container.stdout.split() | length > 1 and current_container.stdout.split()[1] != built_image.stdout.strip())
+          }}
+
+    - name: Remover contêiner antigo se a imagem mudou ou ele não está rodando
+      ansible.builtin.command:
+        cmd: "docker rm -f {{ container_name }}"
+      when: current_container.rc == 0 and needs_restart
+      changed_when: true
+
+    - name: Iniciar o contêiner
+      ansible.builtin.command:
+        cmd: >
+          docker run -d
+          --name {{ container_name }}
+          -p {{ port_host }}:{{ port_container }}
+          --restart unless-stopped
+          {{ app_name }}:{{ app_tag }}
+      when: needs_restart
+      changed_when: true
